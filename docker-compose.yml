@@ -1,0 +1,64 @@
+services:
+  db:
+    image: timescale/timescaledb-ha:pg15
+    container_name: trading-timescale
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader_secret
+      POSTGRES_DB: trading
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader -d trading"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: trading-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://trader:trader_secret@db:5432/trading
+      TRADING_PAIRS: ${TRADING_PAIRS:-BTC/USD,ETH/USD,SOL/USD}
+      TRADING_TIMEFRAMES: ${TRADING_TIMEFRAMES:-1,5,15}
+      EXECUTION_MODE: ${EXECUTION_MODE:-HITM}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-70}
+      PAPER_NOTIONAL_USD: ${PAPER_NOTIONAL_USD:-100.0}
+      PIPELINE_INTERVAL_SECONDS: ${PIPELINE_INTERVAL_SECONDS:-60}
+      KRAKEN_REST_URL: ${KRAKEN_REST_URL:-https://api.kraken.com}
+      KRAKEN_WS_URL: ${KRAKEN_WS_URL:-wss://ws.kraken.com/v2}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    container_name: trading-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  timescale-data:
